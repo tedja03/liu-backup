@@ -2,7 +2,7 @@
 
 A script quickly thrown together to simplify taking a backup of a user's computer before running Erase all contents & settings or some other major reconfiguration change, while still attempting to maintain a fair level of user-friendlyness in using the tool.
 
-It's a new tool to assist with backing up a computer in preparation for a reinstallation, transition to Jamf Connect, or similar major changes that should be preceded by taking a backup. The tool is called LiU Backup and helps to back up one (or all) users on a Mac, as well as the `/Library/Application Support` folder, where some software occasionally stores data that may be desirable to save. The tool is launched by double-clicking on `liu-backup.command`.
+It's a tool to assist with backing up a computer in preparation for reinstallation, transitioning to Jamf Connect, or a similar major change that **should** be preceded by taking a backup. The tool helps to back up one (or all) users on a Mac, as well as the `/Library/Application Support` folder, where some software occasionally stores data that may be desirable to save. The tool is launched by double-clicking on `liu-backup.command`.
 
 > [!IMPORTANT]
 > The idea is that this tool can be used as a complement to the user's own backup – not as a replacement.
