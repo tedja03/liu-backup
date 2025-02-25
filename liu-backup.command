@@ -815,7 +815,7 @@ check_for_update() {
 
     # Download the latest version of the script
     if /usr/bin/curl -s -o "$tmp_script_path" "$repo_url"; then
-        new_version=$(/usr/bin/awk -F = '/    version/ {print $NF}' $tmp_script_path | tr -d '"')
+        new_version=$(/usr/bin/awk -F = '/^    version/ {print $NF}' $tmp_script_path | tr -d '"')
         # Compare the version of the downloaded script with the current script
         if ! is-at-least $new_version $version; then
             print_output "A new version ($new_version) of $product_name is available. You are running $version."
