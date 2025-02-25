@@ -4,7 +4,7 @@
 set_variables() {
     # Set the path to the dialog binary
     product_name="LiU Backup"
-    version="1.1"
+    version="1.1.1"
     script_name="${ZSH_ARGZERO:t}"
     script_path="${ZSH_ARGZERO:a}"
     script_folder="${ZSH_ARGZERO:h:a}"
@@ -315,18 +315,16 @@ run_dialog() {
             "icon": "SF=externaldrive.badge.checkmark,color=#00bcec",
             "message": "'$message'"';;
     update)
-        message=(
-            "$product_name $new_version is available, and the currently running version is $version."
-            "<br><br>Would you like to update to the new version?")
+        message=("<br>&nbsp;<br>Would you like to update?")
         json_arguments+='
-            "width": "600",
-            "height": "400",
+            "width": "400",
+            "height": "350",
             "bannerimage": "'$alt_banner_path'",
-            "bannertitle": "Update available",
-            "button1text": "Update",
+            "bannertitle": "'$product_name' '$new_version' available",
+            "infotext": "Version '$version'",
+            "button1text": "Yes",
             "button2text": "Skip",
-            "infobuttontext": "Quit",
-            "icon": "SF=arrow.down.circle,color=#00cfb5",
+            "icon": "SF=display.and.arrow.down,color=#00cfb5",
             "message": "'${message}'"';;
     update_complete)
         message=(
