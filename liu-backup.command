@@ -94,37 +94,37 @@ run_dialog() {
             "*except $terminal_app_name*, before continuing.")
         init_item='{
             "title": "Script initialization",
-            "icon": "SF=gear.badge.questionmark,color=#00BCEC",
+            "icon": "SF=gear.badge.questionmark,color=#00bcec",
             "status": "success",
             "statustext": "Complete",
             "subtitle": "Script is launched and ready to run"}'
         permission_item='{
             "title": "'$permission'",
-            "icon": "SF=externaldrive.badge.questionmark,color=#00BCEC",
+            "icon": "SF=externaldrive.badge.questionmark,color=#00bcec",
             "status": "pending",
             "statustext": "Pending",
             "subtitle": "'$product_name' requires '$permission'"}'
         user_item='{
             "title": "Backup source selection",
-            "icon": "SF=person.crop.circle.badge.questionmark,color=#00BCEC",
+            "icon": "SF=person.crop.circle.badge.questionmark,color=#00bcec",
             "status": "pending",
             "statustext": "Pending",
             "subtitle": "Select user account(s) to backup"}'
         target_item='{
             "title": "Backup destination",
-            "icon": "SF=folder.fill.badge.plus,color=#00BCEC",
+            "icon": "SF=folder.fill.badge.plus,color=#00bcec",
             "status": "pending",
             "statustext": "Pending",
             "subtitle": "Writability and space requirements"}'
         backup_item='{
             "title": "Perform backup",
-            "icon": "SF=externaldrive.badge.timemachine,color=#00BCEC",
+            "icon": "SF=externaldrive.badge.timemachine,color=#00bcec",
             "status": "pending",
             "statustext": "Pending",
             "subtitle": "Executing the backup job"}'
         next_steps_item='{
             "title": "Next steps",
-            "icon": "SF=gear.badge.questionmark,color=#00BCEC",
+            "icon": "SF=gear.badge.questionmark,color=#00bcec",
             "status": "pending",
             "statustext": "Pending",
             "subtitle": "Migration or reinstall"}'
@@ -132,7 +132,7 @@ run_dialog() {
         first)
             sudo_item='{
                 "title": "Script privileges",
-                "icon": "SF=apple.terminal,color=#00BCEC",
+                "icon": "SF=apple.terminal,color=#00bcec",
                 "status": "pending",
                 "statustext": "Pending",
                 "subtitle": "'$product_name' needs elevation to run properly"}'
@@ -142,7 +142,7 @@ run_dialog() {
         second)
             sudo_item='{
                 "title": "Script privileges",
-                "icon": "SF=apple.terminal,color=#00BCEC",
+                "icon": "SF=apple.terminal,color=#00bcec",
                 "status": "wait",
                 "statustext": "Waiting",
                 "subtitle": "'$product_name' needs elevation to run properly"}'
@@ -162,7 +162,7 @@ run_dialog() {
             "infotext": "Version '$version'",
             "message": "'$message'",
             "bannertitle": "'$product_name'",
-            "icon": "SF=externaldrive.badge.timemachine,color=#00BCEC",
+            "icon": "SF=externaldrive.badge.timemachine,color=#00bcec",
             "button2text": "Cancel",
             "progress": '${#listitem:-7}',
             "height": "775"';;
@@ -177,7 +177,7 @@ run_dialog() {
             "button1text": "Cancel",
             "message": "'${message}'",
             "bannertitle": "Missing permissions",
-            "icon": "SF=person.badge.key,color=#00BCEC"';;
+            "icon": "SF=person.badge.key,color=#00bcec"';;
     unauthorized)
         message="Failed to authenticate correctly three times, aborting …"
         json_arguments+='
@@ -188,7 +188,7 @@ run_dialog() {
             "timer": 3,
             "message": "'${message}'",
             "bannertitle": "Authentication failed 3 times",
-            "icon": "SF=person.badge.key,color=#00BCEC"';;
+            "icon": "SF=person.badge.key,color=#00bcec"';;
     timeout)
         message=(
             "A timeout was reached waiting for Terminal to be granted $permission."
@@ -201,7 +201,7 @@ run_dialog() {
             "button2text": "Cancel",
             "message": "'${message}'",
             "bannertitle": "Permissions timeout",
-            "icon": "SF=person.badge.key,color=#00BCEC"';;
+            "icon": "SF=person.badge.key,color=#00bcec"';;
     authenticate)
         attempts=$1
         pass_field='"title": "Password", "name": "password", "secure": true, "required": true, "prompt": "Password for '$current_user'"'
@@ -226,7 +226,7 @@ run_dialog() {
             "textfield": [{'$pass_field'}],
             "message": "'${message}'",
             "bannertitle": "Elevated permissions required",
-            "icon": "SF=person.badge.key,color=#00BCEC",
+            "icon": "SF=person.badge.key,color=#00bcec",
             "vieworder": "textfield,checkbox"';;
     permissions)
         message=(
@@ -258,7 +258,7 @@ run_dialog() {
             "selectitems": [{'$selectitems'}],
             "message": "'${message}'",
             "bannertitle": "Choose backup source",
-            "icon": "SF=person.fill.questionmark,color=#00BCEC"';;
+            "icon": "SF=person.fill.questionmark,color=#00bcec"';;
     ready)
         message=(
             "| Space | Value |<br>"
@@ -283,7 +283,7 @@ run_dialog() {
             "button2text": "Cancel",
             "message": "'${message}'",
             "bannertitle": "Ready to backup",
-            "icon": "SF=externaldrive.badge.timemachine,color=#00BCEC"';;
+            "icon": "SF=externaldrive.badge.timemachine,color=#00bcec"';;
     next_steps)
         message=("The backup process has completed successfully."
             "<br>At this point, you can choose to attempt a migration through Jamf, or reinstall macOS.")
@@ -309,37 +309,35 @@ run_dialog() {
             "bannertitle": "Backup completed",
             "button1text": "'$button1text'",
             "button2text": "'$button2text'",
-            "icon": "SF=externaldrive.badge.checkmark,color=#00BCEC",
+            "icon": "SF=externaldrive.badge.checkmark,color=#00bcec",
             "message": "'$message'"';;
+    update)
+        message=(
+            "$product_name $new_version is available, and the currently running version is $version."
+            "<br><br>Would you like to update to the new version?")
+        json_arguments+='
+            "width": "600",
+            "height": "400",
+            "bannerimage": "'$alt_banner_path'",
+            "bannertitle": "Update available",
+            "button1text": "Update",
+            "button2text": "Skip",
+            "infobuttontext": "Quit",
+            "icon": "SF=arrow.down.circle,color=#00cfb5",
+            "message": "'${message}'"';;
+    update_complete)
+        message=(
+            "$product_name has been updated to version $new_version."
+            "<br><br>Please restart $product_name to use the new version.")
+        json_arguments+='
+            "width": "600",
+            "height": "400",
+            "bannerimage": "'$alt_banner_path'",
+            "bannertitle": "Update complete",
+            "button1text": "Quit",
+            "icon": "SF=arrow.down.circle,color=#00cfb5",
+            "message": "'${message}'"';;
     esac
-    # erase)
-    #     json_arguments+='
-    #         "width": "600",
-    #         "height": "400",
-    #         "bannerimage": "'$alt_banner_path'",
-    #         "bannertitle": "Erase Assistant",
-    #         "icon": "SF=externaldrive.trianglebadge.exclamationmark,color=#00BCEC",'
-    #     message=(
-    #         "The backup process has completed successfully, and the computer needs to be reinstalled now.")
-    #     if [ $can_eacas = true ]; then
-    #         message+=(
-    #             "<br>Would you like to launch the Erase Assistant to erase the computer?"
-    #             "<br><br>**Note**<br>To use the Erase Assistant you will have to authenticate again.")
-    #         button1text="Open"
-    #         button2text="Not now"
-    #         json_arguments+=('
-    #             "button1text": "'$button1text'",
-    #             "button2text": "'$button2text'",')
-    #     else
-    #         message+=(
-    #             "<br><br>**Note**<br>The Erase Assistant is not available on this computer model."
-    #             "Please use Recovery Mode to erase the computer.")
-    #         button1text="OK"
-    #         json_arguments+=('
-    #             "button1text": "'$button1text'",')
-    #     fi
-    #     json_arguments+='
-    #         "message": "'$message'"';;
     print "{$json_arguments}" > $arguments_json
     sleep 0.1
     case $variant in
@@ -382,6 +380,9 @@ run_dialog() {
         next_steps)
             migrate_answer=$dialog_exit_code
             return;;
+        update)
+            update_exit_code=$dialog_exit_code
+            return $update_exit_code;;
         esac
         case $dialog_exit_code in
         0)
@@ -392,6 +393,8 @@ run_dialog() {
                 if [ $can_eacas = false ]; then
                     error_output 0 "Erase Assistant not available, exiting …"
                 fi;;
+            update)
+                return $dialog_exit_code;;
             esac;;
         # cancelled or quitkey
         2|10)
@@ -500,7 +503,7 @@ progress_update() {
         print "progresstext: Awaiting $terminal_app_name being granted $permission …" >> $command_file;;
     permissions)
         print "listitem: index: 2, status: success, statustext: Granted" >> $command_file
-        print "listitem: index: 2, icon: SF=externaldrive.badge.checkmark color=#00BCEC" >> $command_file
+        print "listitem: index: 2, icon: SF=externaldrive.badge.checkmark color=#00bcec" >> $command_file
         print "progress: increment" >> $command_file
         print "progresstext: ✔︎ $terminal_app_name has been granted $permission …" >> $command_file
         sleep 1
@@ -510,7 +513,7 @@ progress_update() {
     userselect)
         print "listitem: index: 3, status: success, statustext: Chosen" >> $command_file
         print "listitem: index: 3, subtitle: '$selected_user' selected" >> $command_file
-        print "listitem: index: 3, icon: SF=person.crop.circle.badge.checkmark color=#00BCEC" >> $command_file
+        print "listitem: index: 3, icon: SF=person.crop.circle.badge.checkmark color=#00bcec" >> $command_file
         print "progress: increment" >> $command_file
         print "progresstext: ✔︎ Selection made ($selected_user)" >> $command_file
         sleep 1
@@ -801,33 +804,46 @@ show_erase_assistant() {
 
 # Check for a new version of the script
 check_for_update() {
-    repo_url="https://raw.githubusercontent.com/yourusername/yourrepo/main/liu_backup.command"
-    local_script_path="$script_path"
-    tmp_script_path=$(mktemp)
+    repo_url="https://raw.githubusercontent.com/tedja03/liu-backup/main/liu-backup.command"
+    tmp_script_path=$tmp_dir/$script_name
+    autoload is-at-least
 
     # Download the latest version of the script
     if curl -s -o "$tmp_script_path" "$repo_url"; then
-        # Compare the downloaded script with the current script
-        if ! cmp -s "$local_script_path" "$tmp_script_path"; then
-            print_output "A new version of the script is available. Updating..."
-            mv "$tmp_script_path" "$local_script_path"
-            chmod +x "$local_script_path"
-            print_output "Script updated. Please re-run the script."
-            exit 0
+        new_version=$(awk -F \= '/    version/ {print $NF}' $tmp_script_path | tr -d '"')
+        # Compare the version of the downloaded script with the current script
+        if ! is-at-least $new_version $version; then
+            print_output "A new version ($new_version) of $product_name is available. You are running $version."
+            run_dialog update
+            case $? in
+            0)
+                print_output "Updating script to version $new_version …"
+                /bin/mv $script_path "$script_path.bak"
+                /bin/mv $tmp_script_path $script_path
+                /bin/chmod +x $script_path
+                print_output "Script updated. Please re-run the script."
+                run_dialog update_complete
+                exit 0;;
+            2)
+                print_output "Skipping $product_name update. Continuing with the current version.";;
+            3)
+                print_output "User chose to quit from update dialog."
+                exit 0;;
+            esac
         else
             print_output "You are running the latest version of the script."
         fi
     else
-        print_output "Unable to check for updates. Continuing with the current version."
+        return 1
     fi
-    rm -f "$tmp_script_path"
 }
-
-check_for_update
 
 # Main function
 main() {
     set_variables $1 $2
+    if ! check_for_update; then
+        error_output 1 "Unable to check for updates, continuing with the current version …"
+    fi
     script_init
     case $EUID in
     0)
