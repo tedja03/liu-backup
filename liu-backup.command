@@ -4,7 +4,8 @@
 set_variables() {
     # Set the path to the dialog binary
     product_name="LiU Backup"
-    version="1.1.1"
+    version="1.1.2"
+    print_output "$product_name $version launching …"
     script_name="${ZSH_ARGZERO:t}"
     script_path="${ZSH_ARGZERO:a}"
     script_folder="${ZSH_ARGZERO:h:a}"
@@ -14,8 +15,8 @@ set_variables() {
     alt_banner_path="color=#00cfb5"
     case $EUID in
     0)
-        if ! [ -d $1 ] ; then
-            error_output 1 "No temporary directory provided, exiting …"
+        if ! [ -d ${1:-none} ] ; then
+            error_output 2 "Don't run this script as $USER, exiting …"
         fi
         tmp_dir=$1;;
     *)
@@ -63,7 +64,7 @@ set_variables() {
 
 # Prints a message to the terminal prefixed with the current user
 print_output() {
-    print -- "\n[${USER:l}] $*"
+    print -- "[${USER:l}] $*"
 }
 
 # Prints an error message to the terminal and exits
@@ -84,8 +85,7 @@ run_dialog() {
     json_arguments='
         "titlefont": "name=KorolevLiU",
         "ontop": true,
-        "moveable": true,
-        "position": "bottom",'
+        "moveable": true,'
     case $variant in
     process)
         subvariant=$1; shift
@@ -343,7 +343,7 @@ run_dialog() {
     /bin/sleep 0.1
     case $variant in
     process)
-        $dialog_path --commandfile $command_file --jsonfile $arguments_json & /bin/sleep 0.1
+        $dialog_path --commandfile $command_file --jsonfile $arguments_json 2> /dev/null & /bin/sleep 0.1
         dialog_pid=$!
         case $subvariant in
         first)
@@ -413,10 +413,10 @@ script_init() {
     # Check if the script is running as root
     case $EUID in
     0)
-        print_output "Initializing script with elevation"
+        print_output "Initializing elevated functions …"
         return 0;;
     *)
-        print_output "Initializing script parts without elevation"
+        print_output "Initializing non-elevated functions …"
         run_dialog process first;;
     esac
 }
@@ -455,7 +455,7 @@ elevate_script() {
         print $inputted_password | sudo -Sp "" $script_path $tmp_dir
     else
         print_output "Unable to authenticate user using GUI, trying osascript …"
-        /usr/bin/osascript -e 'do shell script "'${script_path} $tmp_dir'" with administrator privileges'
+        /usr/bin/osascript -e 'do shell script "'$script_path $tmp_dir'" with administrator privileges'
     fi
 }
 
@@ -776,7 +776,9 @@ run_backup() {
 
 # Cleanup function
 cleanup() {
-    print "quit:" >> $command_file
+    if [ -v command_file ]; then
+        print "quit:" >> $command_file
+    fi
     if [ $EUID -ne 0 ]; then
         print_output "Cleaning up $product_name run …"
         if [ -d $tmp_dir ]; then
@@ -821,17 +823,23 @@ check_for_update() {
             case $? in
             0)
                 print_output "Updating script to version $new_version …"
-                /bin/mv $script_path "$script_path.bak"
-                /bin/mv $tmp_script_path $script_path
-                /bin/chmod +x $script_path
-                print_output "Script updated. Please re-run the script."
-                run_dialog update_complete
+                if ! /bin/mv $script_path "$script_path.bak"; then
+                    print_output "Unable to create backup of current script, exiting …"
+                    exit 1
+                fi
+                if ! /bin/mv $tmp_script_path $script_path; then
+                    print_output "Unable to update script, exiting …"
+                    exit 1
+                fi
+                if ! /bin/chmod +x $script_path; then
+                    print_output "Unable to set permissions on updated script, exiting …"
+                    exit 1
+                fi
+                print_output "Script updated successfully."
+                $script_path
                 exit 0;;
             2)
-                print_output "Skipping $product_name update. Continuing with the current version.";;
-            3)
-                print_output "User chose to quit from update dialog."
-                exit 0;;
+                print_output "Skipping $product_name update …";;
             esac
         else
             print_output "You are running the latest version of the script."
@@ -843,7 +851,7 @@ check_for_update() {
 
 # Main function
 main() {
-    set_variables $1 $2
+    set_variables $1
     if ! check_for_update; then
         error_output 1 "Unable to check for updates, continuing with the current version …"
     fi
@@ -907,4 +915,4 @@ main() {
 }
 
 trap cleanup INT TERM EXIT
-main $1 $2
+main $1
