@@ -50,8 +50,8 @@ migrating to Jamf Connect), or to run _Erase All Content and Settings_ (if the h
 
 Here's how the tool works:
 
-1. Initial checks are performed to determine the hardware's properties and capabilities, after which the main window of
-   the tool is displayed.
+1. Initial checks are performed to determine the hardware's properties and capabilities, and also if there is a update
+   available for the tool, after which the main window of the tool is displayed.
 2. When ready, click "Let's go," and authentication will be requested to perform parts of the process that require
    elevated privileges.
 3. To back up all files, including those normally protected by macOS privacy settings, the tool requires "Full Disk
