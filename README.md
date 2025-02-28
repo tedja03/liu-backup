@@ -1,4 +1,4 @@
-# liu-backup
+# LiU Backup
 
 A script quickly thrown together to simplify taking a backup of a user's computer before running Erase all contents &
 settings or some other major reconfiguration change, while still attempting to maintain a fair level of
