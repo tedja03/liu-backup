@@ -1,17 +1,46 @@
 #!/bin/zsh
-# shellcheck shell=bash disable=2206,2128,2086
+
+# ============================================
+# Name:     LiU Backup
+# Author:   Ted Jangius
+# ============================================
+
+# Changelog:
+# 1.2 - 2025-02-28
+# - Enhanced the run_dialog function to handle various dialog variants.
+# - Improved error handling and user feedback throughout the script.
+# - Enhanced the script to handle OneDrive processes before starting the backup.
+# - Added more detailed logging and progress updates for each step of the script.
+# - Automated quitting System Settings once Full Disk Access has been granted to Terminal.
+
+# 1.1 - 2025-02-20
+# - Added a new version check and update mechanism for the script.
+# - Added functionality to handle multiple user accounts for backup.
+# - Added a cleanup function to remove temporary files and directories.
+# - Enhanced the script to handle different system architectures (i386 and arm64).
+# - Minor changes to script logic.
+
+# 1.0 - 2025-02-10
+# - Initial release
+
+# Disable shellcheck for zsh-specific syntax, like:
+# - quoting/double quoting to prevent globbing, word splitting, etc.
+# - expanding arrays, and using parameter expansion flags
+# - using the print command to output text
+# - nested variable substitution
+# shellcheck shell=bash disable=2086,2128,2206,2231,2299
 
 set_variables() {
-    # Set the path to the dialog binary
+    clear
     product_name="LiU Backup"
-    version="1.1.2"
+    version="1.2"
     print_output "$product_name $version launching …"
     script_name="${ZSH_ARGZERO:t}"
     script_path="${ZSH_ARGZERO:a}"
     script_folder="${ZSH_ARGZERO:h:a}"
     dialog_path="/usr/local/bin/dialog"
-    applicationsupport_folder="/Library/Application Support"
-    banner_path="$applicationsupport_folder/LiU/Branding/liu_white_blue_1200x200_banner.png"
+    app_support_folder="/Library/Application Support"
+    banner_path="$app_support_folder/LiU/Branding/liu_white_blue_1200x200_banner.png"
     alt_banner_path="color=#00cfb5"
     case $EUID in
     0)
@@ -162,6 +191,8 @@ run_dialog() {
             "listitem": ['${(j:,:)listitem}'],
             "liststyle": "compact",
             "infotext": "Version '$version'",
+            "position": "right",
+            "positionoffset": "150",
             "message": "'$message'",
             "bannertitle": "'$product_name'",
             "icon": "SF=externaldrive.badge.timemachine,color=#00bcec",
@@ -232,10 +263,9 @@ run_dialog() {
             "vieworder": "textfield,checkbox"';;
     permissions)
         message=(
-            "Would you like to open **System Settings** and reveal **$terminal_app_name** in Finder to more easily"
-            "grant the required permissions?"
-            "<br><br>#### Note<br>Ignore any messages about needing to restart **$terminal_app_name** for the"
-            "changes to take effect.<br>Simply press **Later**.")
+            "Would you like to open **System Settings** to more easily grant **$terminal_app_name** the required"
+            "permissions?<br><br>#### Note<br>When the correct permissions are identified, System Settings will be quit"
+            "and the process will continue.")
         json_arguments+='
             "width": "600",
             "height": "500",
@@ -262,6 +292,21 @@ run_dialog() {
             "message": "'${message}'",
             "bannertitle": "Choose backup source",
             "icon": "SF=person.fill.questionmark,color=#00bcec"';;
+    no_space)
+        message=(
+            "Not enough space on target disk to perform backup."
+            "| Space | Value |<br>"
+            "| :--- | :--- |<br>"
+            "| Required | $space_req_string |<br>"
+            "| Free | $space_free_string |<br>")
+        json_arguments+='
+            "width": "600",
+            "height": "400",
+            "bannerimage": "'$alt_banner_path'",
+            "bannertitle": "Not enough space",
+            "button1text": "Cancel",
+            "icon": "SF=externaldrive.badge.xmark,color=#00cfb5",
+            "message": "'${message}'"';;
     ready)
         message=(
             "| Space | Value |<br>"
@@ -286,7 +331,7 @@ run_dialog() {
             "button2text": "Cancel",
             "message": "'${message}'",
             "bannertitle": "Ready to backup",
-            "icon": "SF=externaldrive.badge.timemachine,color=#00bcec"';;
+            "icon": "SF=externaldrive.badge.timemachine,color=#00cfb5"';;
     next_steps)
         message=("The backup process has completed successfully."
             "<br>At this point, you can choose to attempt a migration through Jamf, or reinstall macOS.")
@@ -324,7 +369,7 @@ run_dialog() {
             "infotext": "Version '$version'",
             "button1text": "Yes",
             "button2text": "Skip",
-            "icon": "SF=display.and.arrow.down,color=#00cfb5",
+            "icon": "SF=icloud.and.arrow.down,color=#00cfb5",
             "message": "'${message}'"';;
     update_complete)
         message=(
@@ -462,13 +507,7 @@ elevate_script() {
 # Display a progress indicator while a process is running
 show_progress() {
     backup_pid=${1:-0}
-    if [ $backup_pid -gt 0 ]; then
-        shift
-        print_output "Monitoring backup progress in $backup_log …"
-        local last_output=""
-    else
-        local last_output=$1
-    fi
+    print_output "Monitoring backup progress in $backup_log …"
     local progress=(⣼ ⣹ ⢻ ⠿ ⡟ ⣏ ⣧ ⣶)
     local i=0
     while /bin/ps -p $backup_pid > /dev/null; do
@@ -477,6 +516,9 @@ show_progress() {
             new_output=$(/usr/bin/tail -n 1 $backup_log)
             if [[ "$new_output" != "$last_output" ]]; then
                 last_output=$new_output
+            fi
+            if [ -z "$last_output" ]; then
+                last_output="Backup in progress …"
             fi
             if [ ${#last_output} -gt 120 ]; then
                 last_output="${last_output:0:120}…"
@@ -487,7 +529,7 @@ show_progress() {
         fi
         # Display progress indicator and output
         print -n "\r\033[K${progress[i % ${#progress[@]} + 1]} ${last_output}"
-        print "progresstext: $last_output …" >> $command_file
+        print "progresstext: $last_output" >> $command_file
         /bin/sleep 0.1
         ((i++))
     done
@@ -538,7 +580,7 @@ progress_update() {
         print "progress: increment" >> $command_file
         print "progresstext: Backup in progress …" >> $command_file
         /bin/sleep 1;;
-    migrate)
+    next_steps)
         print "listitem: index: 5, status: success, statustext: Complete" >> $command_file
         print "progress: increment" >> $command_file
         print "progresstext: ✔︎ Backup complete" >> $command_file
@@ -586,13 +628,21 @@ evaluate_full_disk_access() {
         return 1
     }
 
+    # Close System Preferences
+    close_system_settings() {
+        killall "System Settings" >/dev/null 2>&1
+        killall "System Preferences" >/dev/null 2>&1
+    }
+
     iteration=0
     while true; do
+        # Check if the script has $permission
         if get_full_disk_access_status; then
             print "quit:" >> $default_command_file
             break
         fi
         /bin/sleep 1
+        # Check if the dialog is still running
         if ! /usr/bin/pgrep -i dialog > /dev/null; then
             return 1
         fi
@@ -615,18 +665,17 @@ evaluate_full_disk_access() {
         if [ ${showed_dialog:-false} = false ]; then
             showed_dialog=true
             print_output "$permission required for $terminal_app_name, displaying dialog …"
-            print_output "Ignore any messages about needing to restart $terminal_app_name for the changes to take effect."
+            print_output "Upon identifying the correct permissions, System Settings will quit and the script continue …"
             run_dialog permissions
             case $? in
             0)
                 print "button1: disable" >> $default_command_file
                 print "button1text: Waiting …" >> $default_command_file
                 print "message: Waiting for $permission to be granted …" >> $default_command_file
-                print_output "Opening System Preferences and revealing $terminal_app_name."
-                print_output "Please drag-and-drop $terminal_app_name into the System Preferences window and enable it for $permission."
-                /usr/bin/open $prefs_panel_path 2> /dev/null
-                /usr/bin/open -R "$terminal_app_path" 2> /dev/null
-                print "activate: " >> $default_command_file;;
+                print_output "Opening System Preferences."
+                print_output "Please enable $terminal_app_name for $permission."
+                /usr/bin/open $prefs_panel_path 2> /dev/null;;
+                # /usr/bin/open -R "$terminal_app_path" 2> /dev/null;;
             4)
                 error_output 4 "Timeout reached waiting for $permission, exiting …";;
             5)
@@ -640,6 +689,9 @@ evaluate_full_disk_access() {
     done
     print "quit:" >> $default_command_file
     print_output "$terminal_app_name now has $permission, continuing …"
+    # Click Later button, and quit System Settings
+    close_system_settings
+    print "activate: " >> $default_command_file
 }
 
 # Establish the user account to backup
@@ -665,7 +717,6 @@ create_backup_target() {
     case $selected_user in
     all)
         computer_name=$(/usr/sbin/scutil --get ComputerName)
-        # shellcheck disable=2296,2299
         computer_name=${${computer_name//[^[:ascii:]]/}// /_}
         backup_folder="$script_folder/backup_${computer_name}_${datestamp}";;
     *)
@@ -700,9 +751,9 @@ create_backup_target() {
             space_req=$((user_space_req + space_req))
         done;;
     *)
-        space_req=$(du -Asck $applicationsupport_folder /Users/$selected_user | awk '/total/ {print $1*1024}');;
+        space_req=$(du -Asck $app_support_folder /Users/$selected_user | awk '/total/ {print $1*1024}');;
     esac
-    applicationsupport_space_req=$(du -Asck $applicationsupport_folder | awk '/total/ {print $1*1024}')
+    applicationsupport_space_req=$(du -Asck $app_support_folder | awk '/total/ {print $1*1024}')
     space_req=$((applicationsupport_space_req + space_req))
     space_req_string=$(bytesToHumanReadable $space_req)
     space_free_string=$(bytesToHumanReadable $space_free)
@@ -726,26 +777,62 @@ run_backup() {
     backup_log="$backup_folder/backup_process.log"
     # Redirect output to a file
     {
+        break_counter=0
+        while pgrep OneDrive; do
+            print "Checking for and quitting OneDrive processes"
+            # for pid in $(/usr/bin/pgrep OneDrive); do
+            #     kill -s QUIT $pid
+            # done
+            osascript -e 'quit app "OneDrive"'
+            sleep 5
+            if [ $break_counter -gt 6 ]; then
+                print "OneDrive processes still running attempting to quit them for 30 seconds, exiting"
+                return 1
+            fi
+            ((break_counter++))
+        done
+        sleep 1
+        ditto="/usr/bin/ditto"
         case $selected_user in
         all)
             for iterated_user in $users_from_folders; do
-                print "Backing up '/Users/$iterated_user'"
+                source_dir="/Users/$iterated_user"
+                target_dir="$backup_folder/$iterated_user"
+                /bin/mkdir -p $target_dir
                 /bin/sleep 1
-                /usr/bin/ditto --rsrc -v "/Users/$iterated_user" "$backup_folder/$iterated_user" 2> /dev/null
+                for item in $source_dir/*(DN); do
+                    print "Backing up '$item'"
+                    /bin/mkdir -p $target_dir/${item:t}
+                    $ditto -X --rsrc -v $item $target_dir/${item:t} &>/dev/null
+                done
             done;;
         *)
-            print "Backing up '/Users/$selected_user'"
+            source_dir="/Users/$selected_user"
+            target_dir="$backup_folder/$selected_user"
+            /bin/mkdir -p "$target_dir"
             /bin/sleep 1
-            /usr/bin/ditto --rsrc -v "/Users/$selected_user" "$backup_folder/$selected_user" 2> /dev/null;;
+            # shellcheck disable=2231
+            for item in $source_dir/*(DN); do
+                print "Backing up '$item'"
+                /bin/mkdir -p $target_dir/${item:t}
+                $ditto -X --rsrc -v $item $target_dir/${item:t} &>/dev/null
+            done;;
         esac
-        print "Backing up '$applicationsupport_folder'"
+        target_dir="$backup_folder/Application Support"
+        print "Backing up '$app_support_folder'"
+        /bin/mkdir -p "$target_dir"
         /bin/sleep 1
-        /usr/bin/ditto --rsrc -v "$applicationsupport_folder" "$backup_folder/Application Support" 2> /dev/null
+        # shellcheck disable=2231
+        for item in $app_support_folder/*(DN); do
+            print "Backing up '$item'"
+            /bin/mkdir -p $target_dir/${item:t}
+            $ditto -X --rsrc -v $item $target_dir/${item:t} &> /dev/null
+        done
         print "Setting permissions on '$backup_folder'"
         if ! /usr/sbin/chown -R 99:99 $backup_folder; then
-            print "Error setting permissions on '$backup_folder'"
+            print "✘ Error setting permissions on '$backup_folder'"
         else
-            print "✔︎ Permissions successfully set on '$backup_folder'"
+            print "✔︎ Permissions successfully set on backup folder"
         fi
         /bin/sleep 1
         print "Making a list of installed applications"
