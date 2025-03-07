@@ -6,6 +6,10 @@
 # ============================================
 
 # Changelog:
+# 1.2.2 - 2025-03-07
+# - Fixed a bug where the progrss indicator would spin backwards and improved its fluidity.
+# - Changes so that all ditto commands are prefixed with caffeinate to prevent sleep.
+
 # 1.2.1 - 2025-03-07
 # - Fixed a bug where the script would not continue when unable to check for update.
 
@@ -36,7 +40,7 @@
 set_variables() {
     clear
     product_name="LiU Backup"
-    version="1.2.1"
+    version="1.2.2"
     print_output "$product_name $version launching …"
     script_name="${ZSH_ARGZERO:t}"
     script_path="${ZSH_ARGZERO:a}"
@@ -511,7 +515,7 @@ elevate_script() {
 show_progress() {
     backup_pid=${1:-0}
     print_output "Monitoring backup progress in $backup_log …"
-    local progress=(⣼ ⣹ ⢻ ⠿ ⡟ ⣏ ⣧ ⣶)
+    local progress=(⣶ ⣧ ⣏ ⡟ ⠿ ⢻ ⣹ ⣼)
     local i=0
     while /bin/ps -p $backup_pid > /dev/null; do
         if [ $backup_pid -gt 0 ]; then
@@ -533,7 +537,7 @@ show_progress() {
         # Display progress indicator and output
         print -n "\r\033[K${progress[i % ${#progress[@]} + 1]} ${last_output}"
         print "progresstext: $last_output" >> $command_file
-        /bin/sleep 0.1
+        /bin/sleep 0.05
         ((i++))
     done
 }
@@ -795,7 +799,7 @@ run_backup() {
             ((break_counter++))
         done
         sleep 1
-        ditto="/usr/bin/ditto"
+        ditto=("/usr/bin/caffeinate" "-i" "/usr/bin/ditto")
         case $selected_user in
         all)
             for iterated_user in $users_from_folders; do
