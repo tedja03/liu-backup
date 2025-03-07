@@ -36,7 +36,7 @@
 set_variables() {
     clear
     product_name="LiU Backup"
-    version="1.2"
+    version="1.2.1"
     print_output "$product_name $version launching …"
     script_name="${ZSH_ARGZERO:t}"
     script_path="${ZSH_ARGZERO:a}"
