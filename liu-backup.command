@@ -6,6 +6,9 @@
 # ============================================
 
 # Changelog:
+# 1.2.1 - 2025-03-07
+# - Fixed a bug where the script would not continue when unable to check for update.
+
 # 1.2 - 2025-02-28
 # - Enhanced the run_dialog function to handle various dialog variants.
 # - Improved error handling and user feedback throughout the script.
@@ -911,16 +914,13 @@ check_for_update() {
             0)
                 print_output "Updating script to version $new_version …"
                 if ! /bin/mv $script_path "$script_path.bak"; then
-                    print_output "Unable to create backup of current script, exiting …"
-                    exit 1
+                    return 2
                 fi
                 if ! /bin/mv $tmp_script_path $script_path; then
-                    print_output "Unable to update script, exiting …"
-                    exit 1
+                    return 3
                 fi
                 if ! /bin/chmod +x $script_path; then
-                    print_output "Unable to set permissions on updated script, exiting …"
-                    exit 1
+                    return 4
                 fi
                 print_output "Script updated successfully."
                 $script_path
@@ -939,9 +939,17 @@ check_for_update() {
 # Main function
 main() {
     set_variables $1
-    if ! check_for_update; then
-        error_output 1 "Unable to check for updates, continuing with the current version …"
-    fi
+    check_for_update
+    update_return_code=$?
+    case $update_return_code in
+    1)  print_output "Unable to check for updates, continuing with the current version …";;
+    *)
+        case $update_return_code in
+        2)  error_output 2 "Unable to backup current script, exiting …";;
+        3)  error_output 3 "Unable to update script, exiting …";;
+        4)  error_output 4 "Unable to set permissions on updated script, exiting …";;
+        esac;;
+    esac
     script_init
     case $EUID in
     0)
