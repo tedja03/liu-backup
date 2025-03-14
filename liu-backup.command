@@ -1,47 +1,53 @@
 #!/bin/zsh
-
-# ============================================
+# shellcheck shell=bash disable=2086,2128,2206,2231,2299
+#
+# Disable shellcheck for zsh-specific syntax, like:
+# - quoting/double quoting to prevent globbing, word splitting, etc.
+# - expanding arrays, and using parameter expansion flags
+# - using the print command to output text
+# - nested variable substitution
+#
 # Name:     LiU Backup
 # Author:   Ted Jangius
-# ============================================
-
+#
 # Changelog:
+#
+# 1.3 - 2025-03-13
+# - Fixed a bug with how the script enumerated required space for backup.
+# - Added a warning if the backup size differs by more than 10% from the expected size.
+# - Fixed a bug where the script would backup a user's Trash; this is now excluded.
+# - Improved logic for numerous processes.
+# - Small corrections to some dialog messages.
+#
 # 1.2.2 - 2025-03-07
 # - Fixed a bug where the progrss indicator would spin backwards and improved its fluidity.
 # - Changes so that all ditto commands are prefixed with caffeinate to prevent sleep.
-
+#
 # 1.2.1 - 2025-03-07
 # - Fixed a bug where the script would not continue when unable to check for update.
-
+#
 # 1.2 - 2025-02-28
 # - Enhanced the run_dialog function to handle various dialog variants.
 # - Improved error handling and user feedback throughout the script.
 # - Enhanced the script to handle OneDrive processes before starting the backup.
 # - Added more detailed logging and progress updates for each step of the script.
 # - Automated quitting System Settings once Full Disk Access has been granted to Terminal.
-
+#
 # 1.1 - 2025-02-20
 # - Added a new version check and update mechanism for the script.
 # - Added functionality to handle multiple user accounts for backup.
 # - Added a cleanup function to remove temporary files and directories.
 # - Enhanced the script to handle different system architectures (i386 and arm64).
 # - Minor changes to script logic.
-
+#
 # 1.0 - 2025-02-10
 # - Initial release
-
-# Disable shellcheck for zsh-specific syntax, like:
-# - quoting/double quoting to prevent globbing, word splitting, etc.
-# - expanding arrays, and using parameter expansion flags
-# - using the print command to output text
-# - nested variable substitution
-# shellcheck shell=bash disable=2086,2128,2206,2231,2299
+#
 
 set_variables() {
-    clear
+    setopt extended_glob
     product_name="LiU Backup"
-    version="1.2.2"
-    print_output "$product_name $version launching …"
+    version="1.3"
     script_name="${ZSH_ARGZERO:t}"
     script_path="${ZSH_ARGZERO:a}"
     script_folder="${ZSH_ARGZERO:h:a}"
@@ -49,52 +55,52 @@ set_variables() {
     app_support_folder="/Library/Application Support"
     banner_path="$app_support_folder/LiU/Branding/liu_white_blue_1200x200_banner.png"
     alt_banner_path="color=#00cfb5"
-    case $EUID in
-    0)
+    if (( EUID )); then
+        clear
+        print_output "$product_name $version launching"
+        tmp_dir=$(mktemp -d "/tmp/$script_name.XXXXXX")
+    else
         if ! [ -d ${1:-none} ] ; then
-            error_output 2 "Don't run this script as $USER, exiting …"
+            error_output 2 "Don't run this script as $USER, exiting"
         fi
-        tmp_dir=$1;;
-    *)
-        tmp_dir=$(mktemp -d "/tmp/$script_name.XXXXXX");;
-    esac
-    can_eacas=false
+        tmp_dir=$1
+    fi
+    can_eacas=0
     case $(/usr/bin/arch) in
     i386)
         if system_profiler SPiBridgeDataType | grep -q "Apple T2 Security"; then
-            can_eacas=true
+            can_eacas=1
         fi;;
     arm64)
-        can_eacas=true;;
+        can_eacas=1;;
     esac
     arguments_json="$tmp_dir/${script_name}_arguments.json"
     command_file="$tmp_dir/${script_name}.log"
     default_command_file="/var/tmp/dialog.log"
     if ! [ -x $dialog_path ]; then
-        error_output 11 "Unable to find dialog executable, exiting …"
+        error_output 11 "Unable to find dialog executable, exiting"
     fi
     current_user=$USER
     if ! /usr/bin/dsmemberutil checkmembership -U $current_user -G admin | grep -q "user is a member of the group"; then
         run_dialog nonadmin
-        error_output 
+        error_output 1 "Script needs to be run from a local administrator account, exiting"
     fi
     terminal_app_name="Terminal"
     utilities_folder="/System/Applications/Utilities"
     terminal_app_path="$utilities_folder/$terminal_app_name.app"
     permission="Full Disk Access"
     # list of users with home folders in /Users not owned by root, returning only the username, one per line
-    # shellcheck disable=2206,2296
-    users_from_folders=(${(@f)$(print -l /Users/[^_]*(^u:root:))##*/})
-    case ${#users_from_folders} in
-    0)
-        error_output 12 "No user accounts found, exiting …";;
-    [1-9])
-        if [ $EUID -eq 0 ]; then
+    # shellcheck disable=2296
+    users_from_folders=(${(@f)$(print -l /Users/^_*(^u:root:)):t})
+    if ! (( ${#users_from_folders} )); then
+        error_output 12 "No user accounts found, exiting"
+    elif (( ${#users_from_folders} < 10 )); then
+        if ! (( EUID )); then
             print_output "${#users_from_folders} users found"
-        fi;;
-    *)
-        error_output 5 "Too many user accounts found, exiting …";;
-    esac
+        fi
+    else
+        error_output 5 "Too many user accounts found, exiting"
+    fi
     prefs_panel_path="x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
 }
 
@@ -108,7 +114,7 @@ error_output() {
     code=${?:=1}; shift
     case $code in
     1)
-        print_output "Unhandled runtime error, exiting …";;
+        print_output "Unhandled runtime error, exiting";;
     *)
         print -- "[${USER:l}] $*"
     esac
@@ -152,7 +158,7 @@ run_dialog() {
             "icon": "SF=folder.fill.badge.plus,color=#00bcec",
             "status": "pending",
             "statustext": "Pending",
-            "subtitle": "Writability and space requirements"}'
+            "subtitle": "Verifying space requirements"}'
         backup_item='{
             "title": "Perform backup",
             "icon": "SF=externaldrive.badge.timemachine,color=#00bcec",
@@ -174,7 +180,7 @@ run_dialog() {
                 "statustext": "Pending",
                 "subtitle": "'$product_name' needs elevation to run properly"}'
             json_arguments+='
-                "progresstext": "Ready to start …",
+                "progresstext": "Ready to start",
                 "button1text": "Let'\''s go",';;
         second)
             sudo_item='{
@@ -184,7 +190,7 @@ run_dialog() {
                 "statustext": "Waiting",
                 "subtitle": "'$product_name' needs elevation to run properly"}'
             json_arguments+='
-            "progresstext": "Waiting for authentication …",
+            "progresstext": "Waiting for authentication",
             "button1disabled": true,
             "button1text": "Wait",';;
         esac
@@ -217,9 +223,9 @@ run_dialog() {
             "button1text": "Cancel",
             "message": "'${message}'",
             "bannertitle": "Missing permissions",
-            "icon": "SF=person.badge.key,color=#00bcec"';;
+            "icon": "SF=person.badge.key,'$alt_banner_path'"';;
     unauthorized)
-        message=("Failed to authenticate correctly three times, aborting …")
+        message=("Failed to authenticate correctly three times, aborting")
         json_arguments+='
             "bannerimage": "'$alt_banner_path'",
             "width": "600",
@@ -228,7 +234,7 @@ run_dialog() {
             "timer": 3,
             "message": "'${message}'",
             "bannertitle": "Authentication failed 3 times",
-            "icon": "SF=person.badge.key,color=#00bcec"';;
+            "icon": "SF=person.badge.key,'$alt_banner_path'"';;
     timeout)
         message=(
             "A timeout was reached waiting for Terminal to be granted $permission."
@@ -241,11 +247,11 @@ run_dialog() {
             "button2text": "Cancel",
             "message": "'${message}'",
             "bannertitle": "Permissions timeout",
-            "icon": "SF=person.badge.key,color=#00bcec"';;
+            "icon": "SF=person.badge.key,'$alt_banner_path'"';;
     authenticate)
         attempts=$1
-        pass_field='"title": "Password", "name": "password", "secure": true, "required": true, "prompt": "Password for '$current_user'"'
-        admin_field='"label" : "Is a member of the admin group", "checked" : true, "disabled" : true'
+        pass_field='"title": "Password", "name": "password", "secure": true, "required": true'
+        admin_field='"label" : "Member of the admin group", "checked" : true, "disabled" : true'
         base_message="**$product_name** requires elevation."
         message=(
             $base_message
@@ -266,7 +272,7 @@ run_dialog() {
             "textfield": [{'$pass_field'}],
             "message": "'${message}'",
             "bannertitle": "Elevated permissions required",
-            "icon": "SF=person.badge.key,color=#00bcec",
+            "icon": "SF=person.badge.key,'$alt_banner_path'",
             "vieworder": "textfield,checkbox"';;
     permissions)
         message=(
@@ -286,7 +292,11 @@ run_dialog() {
     user_selection)
         message=("Select a user account to backup:")
         # shellcheck disable=2296
-        values='"values": ["'${(j:",":)users_from_folders}'","---","All users above"]'
+        values='"values": ["'$users_from_folders'"]'
+        if (( ${#users_from_folders} > 1 )); then
+            # shellcheck disable=2296
+            values='"values": ["'${(j:",":)users_from_folders}'","---","All users above"]'
+        fi
         selectitems='"title": "User", "required": true, '$values', "default": "'${users_from_folders[1]}'"'
         json_arguments+='
             "width": "600",
@@ -298,21 +308,22 @@ run_dialog() {
             "selectitems": [{'$selectitems'}],
             "message": "'${message}'",
             "bannertitle": "Choose backup source",
-            "icon": "SF=person.fill.questionmark,color=#00bcec"';;
+            "icon": "SF=person.fill.questionmark,'$alt_banner_path'"';;
     no_space)
         message=(
-            "Not enough space on target disk to perform backup."
             "| Space | Value |<br>"
             "| :--- | :--- |<br>"
             "| Required | $space_req_string |<br>"
             "| Free | $space_free_string |<br>")
+        message+=("<br>Not enough space on target disk to perform backup.")
         json_arguments+='
             "width": "600",
             "height": "400",
             "bannerimage": "'$alt_banner_path'",
             "bannertitle": "Not enough space",
-            "button1text": "Cancel",
-            "icon": "SF=externaldrive.badge.xmark,color=#00cfb5",
+            "timer": 30,
+            "button1text": "Abort",
+            "icon": "SF=externaldrive.badge.xmark,palette=#ff6442,#00cfb5",
             "message": "'${message}'"';;
     ready)
         message=(
@@ -320,7 +331,7 @@ run_dialog() {
             "| :--- | :--- |<br>"
             "| Required | $space_req_string |<br>"
             "| Free | $space_free_string |<br>")
-        message+=("<br><br>We're all set to start the backup process.")
+        message+=("<br>We're all set to start the backup process.")
         if [ $total_space_percent -gt 90 ]; then
             print_output "Warning: backup will take up nearly all available disk space on target"
             print_output "After backup, less than $((100-total_space_percent))% will be available"
@@ -338,14 +349,24 @@ run_dialog() {
             "button2text": "Cancel",
             "message": "'${message}'",
             "bannertitle": "Ready to backup",
-            "icon": "SF=externaldrive.badge.timemachine,color=#00cfb5"';;
+            "icon": "SF=externaldrive.badge.timemachine,'$alt_banner_path'"';;
     next_steps)
-        message=("The backup process has completed successfully."
-            "<br>At this point, you can choose to attempt a migration through Jamf, or reinstall macOS.")
-        if [ $can_eacas = true ]; then
+        message=("The backup process has completed successfully.")
+        if (( backup_size_warning )); then
             message+=(
-                "<br><br>**Note**<br>To use the Erase Assistant you will have to authenticate again.")
-            button1text="Attempt a migration …"
+                "<br><br>**Note**<br>The backup size differs by more than 10% from the expected size."
+                "Please verify that no important data is missing.<br>"
+                "| Space | Value |<br>"
+                "| :--- | :--- |<br>"
+                "| Expected size | $lower_bound_string-$upper_bound_string |<br>"
+                "| Backup size | $backup_size_string |<br>")
+            height=700
+        fi
+        message+=("<br><br>At this point, you can choose to attempt a migration through Jamf, or reinstall macOS.")
+        if (( can_eacas )); then
+            message+=(
+                "<br><br>*Note<br>To use the Erase Assistant you will have to authenticate again.*")
+            button1text="Attempt a migration"
             button2text="Quit $product_name"
             infobuttontext="Launch Erase Assistant"
             json_arguments+='
@@ -354,17 +375,17 @@ run_dialog() {
             message+=(
                 "<br><br>**Note**<br>The Erase Assistant is not available on this computer model."
                 "Please use Recovery Mode to erase the computer.")
-            button1text="Attempt a migration …"
+            button1text="Attempt a migration"
             button2text="Quit $product_name"
         fi
         json_arguments+='
             "width": "600",
-            "height": "400",
+            "height": "'${height:-450}'",
             "bannerimage": "'$alt_banner_path'",
             "bannertitle": "Backup completed",
             "button1text": "'$button1text'",
             "button2text": "'$button2text'",
-            "icon": "SF=externaldrive.badge.checkmark,color=#00bcec",
+            "icon": "SF=externaldrive.badge.checkmark,'$alt_banner_path'",
             "message": "'$message'"';;
     update)
         message=("<br>&nbsp;<br>Would you like to update?")
@@ -376,7 +397,7 @@ run_dialog() {
             "infotext": "Version '$version'",
             "button1text": "Yes",
             "button2text": "Skip",
-            "icon": "SF=icloud.and.arrow.down,color=#00cfb5",
+            "icon": "SF=icloud.and.arrow.down,"'$alt_banner_path'",
             "message": "'${message}'"';;
     update_complete)
         message=(
@@ -388,7 +409,7 @@ run_dialog() {
             "bannerimage": "'$alt_banner_path'",
             "bannertitle": "Update complete",
             "button1text": "Quit",
-            "icon": "SF=arrow.down.circle,color=#00cfb5",
+            "icon": "SF=arrow.down.circle,"'$alt_banner_path'",
             "message": "'${message}'"';;
     esac
     print "{$json_arguments}" > $arguments_json
@@ -399,7 +420,7 @@ run_dialog() {
         dialog_pid=$!
         case $subvariant in
         first)
-            print "progresstext: Waiting …" >> $command_file
+            print "progresstext: Waiting" >> $command_file
             /bin/sleep 2
             print "progress: 1" >> $command_file
             wait $dialog_pid
@@ -410,7 +431,7 @@ run_dialog() {
                 /bin/sleep 1
                 print "progress: 1" >> $command_file;;
             2|10)
-                error_output 6 "User cancelled process with GUI, exiting …";;
+                error_output 6 "User cancelled process with GUI, exiting";;
             *)
                 error_output 1;;
             esac
@@ -436,6 +457,12 @@ run_dialog() {
         update)
             update_exit_code=$dialog_exit_code
             return $update_exit_code;;
+        no_space)
+            abort_exit_code=$dialog_exit_code;;
+        ready)
+            if ((dialog_exit_code)); then
+                cleanup_backup_target
+            fi;;
         esac
         case $dialog_exit_code in
         0)
@@ -443,17 +470,19 @@ run_dialog() {
             nonadmin)
                 error_output 0 "Script needs to be run from a local administrator account";;
             erase)
-                if [ $can_eacas = false ]; then
-                    error_output 0 "Erase Assistant not available, exiting …"
+                if ! (( can_eacas )); then
+                    error_output 0 "Erase Assistant not available, exiting"
                 fi;;
             update)
                 return $dialog_exit_code;;
+            no_space)
+                return $abort_exit_code;;
             esac;;
         # cancelled or quitkey
         2|10)
-            error_output 6 "User cancelled process with GUI, exiting …";;
+            error_output 6 "User cancelled process with GUI, exiting";;
         4)
-            error_output 4 "Timeout reached, exiting …";;
+            error_output 4 "Timeout reached, exiting";;
         *)
             error_output 1;;
         esac;;
@@ -463,50 +492,48 @@ run_dialog() {
 # Initialize the script
 script_init() {
     # Check if the script is running as root
-    case $EUID in
-    0)
-        print_output "Initializing elevated functions …"
-        return 0;;
-    *)
-        print_output "Initializing non-elevated functions …"
-        run_dialog process first;;
-    esac
+    if ! (( EUID )); then
+        print_output "Initializing elevated functions"
+        return 0
+    fi
+    print_output "Initializing non-elevated functions"
+    run_dialog process first
 }
 
 # Display a dialog to authenticate the user
 elevate_script() {
     if ! sudo -Nnv &> /dev/null; then
-        print_output "$product_name requires root privileges - showing GUI to authenticate …"
+        print_output "$product_name requires root privileges - showing GUI to authenticate"
         attempts=3
-        while [ $attempts -gt 0 ]; do
+        while (( attempts )); do
             unset inputted_password
             run_dialog authenticate $attempts
             if /usr/bin/dscl . -authonly $current_user $inputted_password &> /dev/null; then
                 # shellcheck disable=2296
                 if print -n -- ${(q)inputted_password} | sudo -Sp "" true &> /dev/null; then
-                    print_output "Password for $current_user is correct, continuing …"
-                    password_correct=true
+                    print_output "Password for $current_user is correct, continuing"
+                    password_correct=1
                     break
                 fi
             fi
-            print_output "Password for $current_user is incorrect, try again …"
+            print_output "Password for $current_user is incorrect, try again"
             ((attempts--))
         done
-        if [ $attempts -eq 0 ]; then
+        if ! (( attempts )); then
             run_dialog unauthorized
-            error_output 3 "Too many invalid attempts, exiting …"
+            error_output 3 "Too many invalid attempts, exiting"
         fi
     else
-        print_output "Elevated privileges already present, continuing …"
-        already_sudo=true
+        print_output "Elevated privileges already present, continuing"
+        already_sudo=1
     fi
-    if [ ${already_sudo:=false} = true ]; then
+    if (( already_sudo )); then
         sudo $script_path $tmp_dir
-    elif [ ${password_correct:=false} = true ]; then
-        print_output "Elevated privileges granted, continuing …"
+    elif (( password_correct )); then
+        print_output "Elevated privileges granted, continuing"
         print $inputted_password | sudo -Sp "" $script_path $tmp_dir
     else
-        print_output "Unable to authenticate user using GUI, trying osascript …"
+        print_output "Unable to authenticate user using GUI, trying osascript"
         /usr/bin/osascript -e 'do shell script "'$script_path $tmp_dir'" with administrator privileges'
     fi
 }
@@ -514,21 +541,21 @@ elevate_script() {
 # Display a progress indicator while a process is running
 show_progress() {
     backup_pid=${1:-0}
-    print_output "Monitoring backup progress in $backup_log …"
+    print_output "Monitoring backup progress in …/${backup_folder:t}/${backup_log:t}"
     local progress=(⣶ ⣧ ⣏ ⡟ ⠿ ⢻ ⣹ ⣼)
     local i=0
     while /bin/ps -p $backup_pid > /dev/null; do
-        if [ $backup_pid -gt 0 ]; then
+        if (( backup_pid )); then
             # Read the latest line in log file
             new_output=$(/usr/bin/tail -n 1 $backup_log)
             if [[ "$new_output" != "$last_output" ]]; then
                 last_output=$new_output
             fi
             if [ -z "$last_output" ]; then
-                last_output="Backup in progress …"
+                last_output="Backup in progress"
             fi
-            if [ ${#last_output} -gt 120 ]; then
-                last_output="${last_output:0:120}…"
+            if (( ${#last_output} > 120 )); then
+                last_output="${last_output:0:120}"
             fi
         fi
         if ! /usr/bin/pgrep -i dialog > /dev/null; then
@@ -537,7 +564,7 @@ show_progress() {
         # Display progress indicator and output
         print -n "\r\033[K${progress[i % ${#progress[@]} + 1]} ${last_output}"
         print "progresstext: $last_output" >> $command_file
-        /bin/sleep 0.05
+        /bin/sleep 0.2
         ((i++))
     done
 }
@@ -547,67 +574,84 @@ progress_update() {
     case $1 in
     authenticate)
         print "listitem: index: 1, status: success, statustext: Elevated" >> $command_file
+        print "listitem: index: 1, subtitle: Elevated privileges granted" >> $command_file
         print "progress: increment" >> $command_file
         print "progresstext: ✔︎ Authenticated" >> $command_file
         /bin/sleep 1
-        print "listitem: index: 2, status: wait, statustext: Processing …" >> $command_file
-        print "progresstext: Awaiting $terminal_app_name being granted $permission …" >> $command_file;;
+        print "listitem: index: 2, status: wait, statustext: Processing" >> $command_file
+        print "progresstext: Awaiting $terminal_app_name being granted $permission" >> $command_file;;
     permissions)
         print "listitem: index: 2, status: success, statustext: Granted" >> $command_file
+        print "listitem: index: 2, subtitle: $terminal_app_name granted $permission" >> $command_file
         print "listitem: index: 2, icon: SF=externaldrive.badge.checkmark color=#00bcec" >> $command_file
         print "progress: increment" >> $command_file
-        print "progresstext: ✔︎ $terminal_app_name has been granted $permission …" >> $command_file
+        print "progresstext: ✔︎ $terminal_app_name has been granted $permission" >> $command_file
         /bin/sleep 1
-        print "listitem: index: 3, status: wait, statustext: Processing …" >> $command_file
-        print "progresstext: Waiting for backup source selection …" >> $command_file
+        print "listitem: index: 3, status: wait, statustext: Processing" >> $command_file
+        print "progresstext: Waiting for backup source selection" >> $command_file
         ;;
     userselect)
         print "listitem: index: 3, status: success, statustext: Chosen" >> $command_file
-        print "listitem: index: 3, subtitle: '$selected_user' selected" >> $command_file
+        print "listitem: index: 3, subtitle: $selected_user selected" >> $command_file
         print "listitem: index: 3, icon: SF=person.crop.circle.badge.checkmark color=#00bcec" >> $command_file
         print "progress: increment" >> $command_file
         print "progresstext: ✔︎ Selection made ($selected_user)" >> $command_file
         /bin/sleep 1
-        print "listitem: index: 4, status: wait, statustext: Processing …" >> $command_file
-        print "progresstext: Verifying writability and space requirements …" >> $command_file;;
+        print "listitem: index: 4, status: wait, statustext: Calculating" >> $command_file
+        print "progresstext: Verifying space requirements" >> $command_file;;
     ready)
         print "listitem: index: 4, status: success, statustext: Verified" >> $command_file
-        print "listitem: index: 4, subtitle: …/${backup_folder:t}" >> $command_file
+        print "listitem: index: 4, subtitle:/${backup_folder:t}" >> $command_file
         print "progress: increment" >> $command_file
-        print "progresstext: ✔︎ Backup target: $total_space_string" >> $command_file
+        print "progresstext: ✔︎ Backup target:/${backup_folder:t} | $total_space_string" >> $command_file
         /bin/sleep 2
-        print "listitem: index: 5, status: pending, statustext: Waiting …" >> $command_file
-        print "progresstext: Waiting to start backup …" >> $command_file;;
+        print "listitem: index: 5, subtitle: $space_req_string to backup" >> $command_file
+        print "listitem: index: 5, status: pending, statustext: Waiting" >> $command_file
+        print "progresstext: Waiting to start backup" >> $command_file;;
     no_space)
         print "listitem: index: 4, status: error, statustext: Error" >> $command_file
+        print "listitem: index: 4, subtitle: Not enough space" >> $command_file
         print "progress: complete" >> $command_file
         print "progresstext: ✘ Not enough space, $total_space_string" >> $command_file;;
+    unable_to_create)
+        print "listitem: index: 4, status: error, statustext: Error" >> $command_file
+        print "listitem: index: 4, subtitle: Unable to create backup folder" >> $command_file
+        print "progress: complete" >> $command_file
+        print "progresstext: ✘ Unable to create backup folder" >> $command_file
+        sleep 10;;
+    unable_to_write)
+        print "listitem: index: 4, status: error, statustext: Error" >> $command_file
+        print "listitem: index: 4, subtitle: Unable to write to backup folder" >> $command_file
+        print "progress: complete" >> $command_file
+        print "progresstext: ✘ Unable to write to backup folder" >> $command_file
+        sleep 10;;
     going)
-        print "listitem: index: 5, status: wait, statustext: Processing …" >> $command_file
+        print "listitem: index: 5, status: wait, statustext: Processing" >> $command_file
         print "progress: increment" >> $command_file
-        print "progresstext: Backup in progress …" >> $command_file
+        print "progresstext: Backup in progress" >> $command_file
         /bin/sleep 1;;
     next_steps)
         print "listitem: index: 5, status: success, statustext: Complete" >> $command_file
+        print "listitem: index: 5, subtitle: Backup complete" >> $command_file
         print "progress: increment" >> $command_file
         print "progresstext: ✔︎ Backup complete" >> $command_file
         /bin/sleep 1
-        print "listitem: index: 6, status: wait, statustext: Processing …" >> $command_file
-        print "progresstext: Waiting for answer …" >> $command_file;;
+        print "listitem: index: 6, status: wait, statustext: Processing" >> $command_file
+        print "progresstext: Waiting for answer" >> $command_file;;
     last)
         case $migrate_answer in
         0)
             print "listitem: index: 6, status: success, statustext: Done" >> $command_file
             print "progress: increment" >> $command_file
             print "listitem: index: 4, subtitle: Jamf Connect migration" >> $command_file
-            print "progresstext: ✔︎ Jamf Connect migration selected …" >> $command_file
+            print "progresstext: ✔︎ Jamf Connect migration selected" >> $command_file
             /bin/sleep 1
-            print "listitem: index: 7, status: wait, statustext: Processing …" >> $command_file
-            print "progresstext: Attempting Jamf Connect migration …" >> $command_file;;
+            print "listitem: index: 7, status: wait, statustext: Processing" >> $command_file
+            print "progresstext: Attempting Jamf Connect migration" >> $command_file;;
         2)
             print "listitem: index: 6, status: success, statustext: Done" >> $command_file
             print "progress: complete" >> $command_file
-            print "progresstext: ✔︎ Backup complete, quitting …" >> $command_file
+            print "progresstext: ✔︎ Backup complete, quitting" >> $command_file
             /bin/sleep 1;;
         3)
             print "listitem: index: 6, status: success, statustext: Done" >> $command_file
@@ -615,8 +659,8 @@ progress_update() {
             print "listitem: index: 4, subtitle: Erase Assistant" >> $command_file
             print "progresstext: ✔︎ Erase Assistant selected" >> $command_file
             /bin/sleep 1
-            print "listitem: index: 7, status: wait, statustext: Processing …" >> $command_file
-            print "progresstext: Launching Erase Assistant …" >> $command_file;;
+            print "listitem: index: 7, status: wait, statustext: Processing" >> $command_file
+            print "progresstext: Launching Erase Assistant" >> $command_file;;
         esac;;
     esac
 }
@@ -628,7 +672,9 @@ evaluate_full_disk_access() {
         bundle_id="com.apple.Terminal"
         command="/usr/bin/sqlite3"
         db_path="/Library/Application Support/com.apple.TCC/TCC.db"
+        # shellcheck disable=2089
         query='select client from access where auth_value and service = "kTCCServiceSystemPolicyAllFiles"'
+        # shellcheck disable=2090
         if $command $db_path $query 2> /dev/null | grep -q $bundle_id; then
             return
         fi
@@ -656,46 +702,45 @@ evaluate_full_disk_access() {
         ((iteration++)) 
         minutes=$((iteration / 60))
         seconds=$((iteration % 60))
-        if [ $iteration -gt 3 ]; then
-            print -n "\r\033[KAwaiting permission (max 2 minutes) … [${minutes}m ${seconds}s elapsed]"
+        if (( iteration > 3 )); then
+            print -n "\r\033[KAwaiting permission (max 2 minutes) [${minutes}m ${seconds}s elapsed]"
         fi
-        if [ $iteration -gt 120 ]; then
+        if (( iteration > 120 )); then
             run_dialog timeout
-            error_output 4 "Timeout reached waiting for $permission, exiting …"
+            error_output 4 "Timeout reached waiting for $permission, exiting"
         fi
     done &
     /bin/sleep 0.5
-    while [ ${question_answered:-false} = false ]; do
+    while true; do
         if get_full_disk_access_status; then
             break
         fi
-        if [ ${showed_dialog:-false} = false ]; then
-            showed_dialog=true
-            print_output "$permission required for $terminal_app_name, displaying dialog …"
-            print_output "Upon identifying the correct permissions, System Settings will quit and the script continue …"
+        if (( showed_dialog )); then
+            showed_dialog=1
+            print_output "$permission required for $terminal_app_name, displaying dialog"
+            print_output "Upon identifying the correct permissions, System Settings will quit and the script continue"
             run_dialog permissions
             case $? in
             0)
                 print "button1: disable" >> $default_command_file
-                print "button1text: Waiting …" >> $default_command_file
-                print "message: Waiting for $permission to be granted …" >> $default_command_file
-                print_output "Opening System Preferences."
-                print_output "Please enable $terminal_app_name for $permission."
+                print "button1text: Waiting" >> $default_command_file
+                print "message: Waiting for $permission to be granted" >> $default_command_file
+                print_output "Opening System Preferences"
+                print_output "Please enable $terminal_app_name for $permission"
                 /usr/bin/open $prefs_panel_path 2> /dev/null;;
-                # /usr/bin/open -R "$terminal_app_path" 2> /dev/null;;
             4)
-                error_output 4 "Timeout reached waiting for $permission, exiting …";;
+                error_output 4 "Timeout reached waiting for $permission, exiting";;
             5)
-                print_output "Permissions were granted without dialog interaction, continuing …"
+                print_output "Permissions were granted without dialog interaction, continuing"
                 break;;
             *)
-                error_output $? "User cancelled process with GUI, exiting …";;
+                error_output $? "User cancelled process with GUI, exiting";;
             esac
         fi
         /bin/sleep 1
     done
     print "quit:" >> $default_command_file
-    print_output "$terminal_app_name now has $permission, continuing …"
+    print_output "$terminal_app_name now has $permission, continuing"
     # Click Later button, and quit System Settings
     close_system_settings
     print "activate: " >> $default_command_file
@@ -710,73 +755,70 @@ establish_user() {
 
 # Create the backup target folder
 create_backup_target() {
-    # Converts bytes value to human-readable string [$1: bytes value]
+    # Converts bytes value to human-readable string [$1: bytes value] (base10)
     bytesToHumanReadable() {
-        local i=${1:-0} d="" s=1 S=("Bytes" "KiB" "MiB" "GiB" "TiB" "PiB" "EiB" "YiB" "ZiB")
-        while ((i > 1024 && s < ${#S[@]}-1)); do
-            printf -v d ".%02d" $((i % 1024 * 100 / 1024))
-            i=$((i / 1024))
+        local i=${1:-0} d="" s=1 S=("KB" "MB" "GB" "TB" "PB" "EB" "YB" "ZB")
+        while ((i > 1000 && s < ${#S[@]}-1)); do
+            printf -v d ".%02d" $((i % 1000 * 100 / 1000))
+            i=$((i / 1000))
             s=$((s + 1))
         done
         print "$i$d ${S[$s]}"
     }
 
-    case $selected_user in
-    all)
-        computer_name=$(/usr/sbin/scutil --get ComputerName)
-        computer_name=${${computer_name//[^[:ascii:]]/}// /_}
-        backup_folder="$script_folder/backup_${computer_name}_${datestamp}";;
-    *)
-        backup_folder="$script_folder/backup_${selected_user}_${datestamp}";;
-    esac
     datestamp=$(/bin/date $'+'$'%Y-%m-%d')
     case $selected_user in
     all)
-        computer_name=$(scutil --get ComputerName)
+        computer_name=$(/usr/sbin/scutil --get ComputerName)
         backup_folder="$script_folder/backup_${computer_name}_${datestamp}";;
     *)
         backup_folder="$script_folder/backup_${selected_user}_${datestamp}";;
     esac
     if [ -d $backup_folder ]; then
-        print_output "Backup folder already exists, adding a timestamp to the folder name …"
-        backup_folder="$backup_folder-$(date +%H.%M.%S)"
-    fi
-    print_output "Creating backup folder: $backup_folder"
-    if ! /bin/mkdir -p $backup_folder; then
-        error_output 7 "Unable to create backup folder, exiting …"
-    fi
-    if ! [ -w $backup_folder ]; then
-        error_output 8 "Unable to write to backup folder, exiting …"
+        print_output "Backup folder already exists, adding a timestamp to the folder name"
+        backup_folder+="-$(/bin/date +%H.%M.%S)"
     fi
     # check if target has enough space
-    space_free=$(/bin/df -k $backup_folder | awk 'NR==2 {print $4*1024}')
+    space_free=$(/bin/df -k $script_folder | awk 'NR==2 {print $4}')
     space_req=0
     case $selected_user in
     all)
+        print_output "Calculating space requirements for all users"
         for iterated_user in $users_from_folders; do
-            user_space_req=$(du -Asck /Users/$iterated_user | awk '/total/ {print $1*1024}')
-            space_req=$((user_space_req + space_req))
+            user_space_req=$(/usr/bin/du -sAckx /Users/$iterated_user/^.Trash*(DN) | awk '/total/ {print $1}')
+            space_req=$((space_req + user_space_req))
         done;;
     *)
-        space_req=$(du -Asck $app_support_folder /Users/$selected_user | awk '/total/ {print $1*1024}');;
+        print_output "Calculating space requirements for $selected_user"
+        # shellcheck disable=2296
+        source_folders=("${(@f)$(print -l /Users/${selected_user}/^.Trash*(DN))}")
+        user_space_req=$(/usr/bin/du -sAckx $source_folders | awk '/total/ {print $1}')
+        space_req=$((space_req + user_space_req));;
     esac
-    applicationsupport_space_req=$(du -Asck $app_support_folder | awk '/total/ {print $1*1024}')
-    space_req=$((applicationsupport_space_req + space_req))
+    applicationsupport_space_req=$(/usr/bin/du -sAckx $app_support_folder/*(DN) | awk '/total/ {print $1}')
+    space_req=$((space_req + applicationsupport_space_req))
     space_req_string=$(bytesToHumanReadable $space_req)
     space_free_string=$(bytesToHumanReadable $space_free)
-    total_space_string="…/${backup_folder:t} (req: $space_req_string, avail: $space_free_string)"
+    total_space_string="(req: $space_req_string, avail: $space_free_string)"
     total_space_percent=$(print -- $((space_req * 100 / space_free)))
     if [[ $space_free -lt $space_req ]]; then
-        progress_update no_space
-        /bin/sleep 120
-        error_output 9 "Not enough space on target, exiting …"
+        return 1
+    fi
+    print_output "Creating backup folder: $backup_folder"
+    if ! /bin/mkdir -p $backup_folder; then
+        progress_update unable_to_create
+        error_output 7 "Unable to create backup folder, exiting"
+    fi
+    if ! [ -w $backup_folder ]; then
+        progress_update unable_to_write
+        error_output 8 "Unable to write to backup folder, exiting"
     fi
 }
 
 # Display the ready to run message
 ready_to_run() {
-    print_output "Please save any documents and close all applications, except Terminal.app, before continuing."
-    run_dialog ready
+    print_output "Please save any documents and close all applications, except Terminal.app, before continuing"
+    run_dialog ready || return 1
 }
 
 # Run the backup process
@@ -785,12 +827,12 @@ run_backup() {
     # Redirect output to a file
     {
         break_counter=0
-        while pgrep OneDrive; do
-            print "Checking for and quitting OneDrive processes"
+        print "Checking for and quitting OneDrive processes"
+        while pgrep -q OneDrive; do
             # for pid in $(/usr/bin/pgrep OneDrive); do
             #     kill -s QUIT $pid
             # done
-            osascript -e 'quit app "OneDrive"'
+            /usr/bin/osascript -e 'quit app "OneDrive"' &> /dev/null
             sleep 5
             if [ $break_counter -gt 6 ]; then
                 print "OneDrive processes still running attempting to quit them for 30 seconds, exiting"
@@ -799,7 +841,7 @@ run_backup() {
             ((break_counter++))
         done
         sleep 1
-        ditto=("/usr/bin/caffeinate" "-i" "/usr/bin/ditto")
+        _ditto=("/usr/bin/ditto")
         case $selected_user in
         all)
             for iterated_user in $users_from_folders; do
@@ -807,10 +849,10 @@ run_backup() {
                 target_dir="$backup_folder/$iterated_user"
                 /bin/mkdir -p $target_dir
                 /bin/sleep 1
-                for item in $source_dir/*(DN); do
-                    print "Backing up '$item'"
+                for item in $source_dir/^.Trash*(DN); do
+                    print "Backing up: $item"
                     /bin/mkdir -p $target_dir/${item:t}
-                    $ditto -X --rsrc -v $item $target_dir/${item:t} &>/dev/null
+                    $_ditto -X --rsrc -v $item $target_dir/${item:t} &>/dev/null
                 done
             done;;
         *)
@@ -819,25 +861,25 @@ run_backup() {
             /bin/mkdir -p "$target_dir"
             /bin/sleep 1
             # shellcheck disable=2231
-            for item in $source_dir/*(DN); do
-                print "Backing up '$item'"
+            for item in $source_dir/^.Trash*(DN); do
+                print "Backing up: $item"
                 /bin/mkdir -p $target_dir/${item:t}
-                $ditto -X --rsrc -v $item $target_dir/${item:t} &>/dev/null
+                $_ditto -X --rsrc -v $item $target_dir/${item:t} &>/dev/null
             done;;
         esac
         target_dir="$backup_folder/Application Support"
-        print "Backing up '$app_support_folder'"
+        print "Backing up: $app_support_folder"
         /bin/mkdir -p "$target_dir"
         /bin/sleep 1
         # shellcheck disable=2231
         for item in $app_support_folder/*(DN); do
-            print "Backing up '$item'"
+            print "Backing up: $item"
             /bin/mkdir -p $target_dir/${item:t}
-            $ditto -X --rsrc -v $item $target_dir/${item:t} &> /dev/null
+            $_ditto -X --rsrc -v $item $target_dir/${item:t} &> /dev/null
         done
-        print "Setting permissions on '$backup_folder'"
+        print "Setting permissions on: …/${backup_folder:t}"
         if ! /usr/sbin/chown -R 99:99 $backup_folder; then
-            print "✘ Error setting permissions on '$backup_folder'"
+            print "✘ Error setting permissions on: …/${backup_folder:t}"
         else
             print "✔︎ Permissions successfully set on backup folder"
         fi
@@ -854,17 +896,18 @@ run_backup() {
     # Show progress indicator and output
     show_progress $bg_pid &
     # Wait for the background process to finish
+    /usr/bin/caffeinate -imw $bg_pid
     wait $bg_pid
     case $? in
     0)
         # Kill the progress indicator
         kill $!
         # Display the final output
-        print_output "\nBackup process completed.";;
+        print_output "\nBackup process completed";;
     137)
-        error_output 6 "User cancelled process with GUI, exiting …";;
+        error_output 6 "User cancelled process with GUI, exiting";;
     *)
-        error_output 1 "Backup process failed, exiting …";;
+        error_output 1 "Backup process failed, exiting";;
     esac
 }
 
@@ -873,8 +916,8 @@ cleanup() {
     if [ -v command_file ]; then
         print "quit:" >> $command_file
     fi
-    if [ $EUID -ne 0 ]; then
-        print_output "Cleaning up $product_name run …"
+    if (( EUID )); then
+        print_output "Cleaning up $product_name run"
         if [ -d $tmp_dir ]; then
             /bin/rm -rf $tmp_dir
         fi
@@ -890,15 +933,40 @@ next_steps() {
 run_migrate() {
     case $migrate_answer in
     0)
-        print_output "Opening Self Service to the Jamf Connect migration policy …"
+        print_output "Opening Self Service to the Jamf Connect migration policy"
         /usr/bin/open "jamfselfservice://content?entity=policy&id=949&action=view";;
     esac
 }
 
 # Show the erase assistant
 show_erase_assistant() {
-    print_output "Launching Erase Assistant …"
+    print_output "Launching Erase Assistant"
     /usr/bin/open "/System/Library/CoreServices/Erase Assistant.app"
+}
+
+# Verify the backup
+verify_backup() {
+    print_output "Verifying backup"
+    backup_size=$(/usr/bin/du -sHAckx $backup_folder/*(DN) | awk '/total/ {print $1}')
+    backup_size_string=$(bytesToHumanReadable $backup_size)
+    space_req_percent=$((backup_size / 10)) # 10% of backup size
+    lower_bound=$((space_req - space_req_percent))
+    upper_bound=$((space_req + space_req_percent))
+    lower_bound_string=$(bytesToHumanReadable $lower_bound)
+    upper_bound_string=$(bytesToHumanReadable $upper_bound)
+    if ! ((backup_size >= lower_bound && backup_size <= upper_bound)); then
+        print_output "Backup size: $backup_size_string"
+        print_output "Expected size: $lower_bound_string to $upper_bound_string"
+        backup_size_warning=1
+    fi
+}
+
+# Cleanup the backup target folder
+cleanup_backup_target() {
+    print_output "Cleaning up backup target folder"
+    if [ -d ${backup_folder?} ]; then
+        /bin/rm -rf ${backup_folder}
+    fi
 }
 
 # Check for a new version of the script
@@ -912,11 +980,11 @@ check_for_update() {
         new_version=$(/usr/bin/awk -F = '/^    version/ {print $NF}' $tmp_script_path | tr -d '"')
         # Compare the version of the downloaded script with the current script
         if ! is-at-least $new_version $version; then
-            print_output "A new version ($new_version) of $product_name is available. You are running $version."
+            print_output "A new version ($new_version) of $product_name is available. You are running $version"
             run_dialog update
             case $? in
             0)
-                print_output "Updating script to version $new_version …"
+                print_output "Updating script to version $new_version"
                 if ! /bin/mv $script_path "$script_path.bak"; then
                     return 2
                 fi
@@ -926,14 +994,14 @@ check_for_update() {
                 if ! /bin/chmod +x $script_path; then
                     return 4
                 fi
-                print_output "Script updated successfully."
+                print_output "Script updated successfully"
                 $script_path
                 exit 0;;
             2)
-                print_output "Skipping $product_name update …";;
+                print_output "Skipping $product_name update";;
             esac
         else
-            print_output "You are running the latest version of the script."
+            print_output "You are running the latest version of the script"
         fi
     else
         return 1
@@ -943,61 +1011,68 @@ check_for_update() {
 # Main function
 main() {
     set_variables $1
-    check_for_update
-    update_return_code=$?
-    case $update_return_code in
-    1)  print_output "Unable to check for updates, continuing with the current version …";;
-    *)
+    if (( EUID )); then
+        check_for_update
+        update_return_code=$?
         case $update_return_code in
-        2)  error_output 2 "Unable to backup current script, exiting …";;
-        3)  error_output 3 "Unable to update script, exiting …";;
-        4)  error_output 4 "Unable to set permissions on updated script, exiting …";;
-        esac;;
-    esac
+        1)  print_output "Unable to check for updates, continuing with the current version";;
+        *)
+            case $update_return_code in
+            2)  error_output 2 "Unable to backup current script, exiting";;
+            3)  error_output 3 "Unable to update script, exiting";;
+            4)  error_output 4 "Unable to set permissions on updated script, exiting";;
+            esac;;
+        esac
+    fi
     script_init
-    case $EUID in
-    0)
+    if ! (( EUID )); then
         print "listitem: 0: success" >> $command_file
-        print_output "Running as root, continuing …";;
-    *)
+        print_output "Running as root, continuing"
+    else
         elevate_script
         case $? in
         0)
             exit 0;;
         3)
-            error_output 3 "Too many invalid selections, exiting …";;
+            error_output 3 "Too many invalid selections, exiting";;
         4)
-            error_output 4 "Timeout reached waiting for $permission, exiting …";;
+            error_output 4 "Timeout reached waiting for $permission, exiting";;
         5)
-            error_output 5 "Too many user accounts found, please handle this computer manually …";;
+            error_output 5 "Too many user accounts found, please handle this computer manually";;
         2|6|10|137)
-            error_output 6 "User cancelled process with GUI, exiting …";;
+            error_output 6 "User cancelled process with GUI, exiting";;
         7)
-            error_output 4 "Unable to create backup folder, exiting …";;
+            error_output 4 "Unable to create backup folder, exiting";;
         8)
-            error_output 7 "Unable to write to backup folder, exiting …";;
+            error_output 7 "Unable to write to backup folder, exiting";;
         9)
-            error_output 8 "Not enough space on target, exiting …";;
+            error_output 8 "Not enough space on target, exiting";;
         11)
-            error_output 2 "Unable to find dialog binary, exiting …";;
+            error_output 2 "Unable to find dialog binary, exiting";;
         12)
-            error_output 3 "No user folders found, exiting …";;
+            error_output 3 "No user folders found, exiting";;
         *)
-            error_output 1 "Unhandled runtime error, exiting …";;
-        esac;;
-    esac
+            error_output 1 "Unhandled runtime error, exiting";;
+        esac
+    fi
     progress_update authenticate
     evaluate_full_disk_access
     progress_update permissions
     establish_user
     progress_update userselect
-    create_backup_target
+    if ! create_backup_target; then
+        progress_update no_space
+        run_dialog no_space
+        print_output "Required: $space_req_string, Free: $space_free_string"
+        error_output 9 "Not enough space on target disk to perform backup"
+    fi
     progress_update ready
     ready_to_run
     progress_update going
     if ! run_backup; then
-        error_output 1 "Backup process failed, exiting …"
+        error_output 1 "Backup process failed, exiting"
     fi
+    verify_backup
     progress_update next_steps
     next_steps
     case $migrate_answer in
