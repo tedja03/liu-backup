@@ -12,6 +12,9 @@
 #
 # Changelog:
 #
+# 1.3.2 - 2025-04-02
+# - Minor typo in json string for update dialog caused update failures.
+#
 # 1.3.1 - 2025-04-02
 # - Switched backup engine from ditto to rsync.
 # - Added an exclusion for OneDrive's cache (<user_home>/Library/Group Containers/UBF8T346G9.OneDriveStandaloneSuite)
@@ -54,7 +57,7 @@
 set_variables() {
     setopt extended_glob
     product_name="LiU Backup"
-    version="1.3.1"
+    version="1.3.2"
     script_name="${ZSH_ARGZERO:t}"
     script_path="${ZSH_ARGZERO:a}"
     script_folder="${ZSH_ARGZERO:h:a}"
@@ -434,7 +437,7 @@ run_dialog() {
             "infotext": "Version '$version'",
             "button1text": "Yes",
             "button2text": "Skip",
-            "icon": "SF=icloud.and.arrow.down,"'$alt_banner_path'",
+            "icon": "SF=icloud.and.arrow.down,'$alt_banner_path'",
             "message": "'${message}'"';;
     update_complete)
         message=(
