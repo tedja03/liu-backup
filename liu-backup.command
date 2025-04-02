@@ -12,6 +12,13 @@
 #
 # Changelog:
 #
+# 1.3.1 - 2025-04-02
+# - Switched backup engine from ditto to rsync.
+# - Added an exclusion for OneDrive's cache (<user_home>/Library/Group Containers/UBF8T346G9.OneDriveStandaloneSuite)
+#       since it was causing issues with the backup process and/or calculating the backup size.
+# - Changed the logic for how user folders are enumerated, and added support for the Shared folder, if it exists.
+# - Fixed a bug where the dialog for Full Disk Access would not show.
+#
 # 1.3 - 2025-03-13
 # - Fixed a bug with how the script enumerated required space for backup.
 # - Added a warning if the backup size differs by more than 10% from the expected size.
@@ -47,7 +54,7 @@
 set_variables() {
     setopt extended_glob
     product_name="LiU Backup"
-    version="1.3"
+    version="1.3.1"
     script_name="${ZSH_ARGZERO:t}"
     script_path="${ZSH_ARGZERO:a}"
     script_folder="${ZSH_ARGZERO:h:a}"
@@ -64,6 +71,24 @@ set_variables() {
             error_output 2 "Don't run this script as $USER, exiting"
         fi
         tmp_dir=$1
+        # list of users with home folders in /Users not owned by root,
+        # returning only the username, one per line
+        # shellcheck disable=2296
+        users_from_folders=(${(@f)$(print -l /Users/^_*(^u:root:)):t})
+        # add Shared folder to the list if it exists, but only if it has files in it
+        if [ -d /Users/Shared ]; then
+            if (( $(ls -l /Users/Shared | wc -l) )); then
+                shared_folder_size=$(bytesToHumanReadable $(du -sck /Users/Shared | awk '/\ttotal/ {print $1}'))
+                users_from_folders+=("Shared")
+            fi
+        fi
+        if ! (( ${#users_from_folders} )); then
+            error_output 12 "No user accounts found, exiting"
+        elif (( ${#users_from_folders} < 10 )); then
+            print_output "${#users_from_folders} users found"
+        else
+            error_output 5 "Too many user accounts found, exiting"
+        fi
     fi
     can_eacas=0
     case $(/usr/bin/arch) in
@@ -89,18 +114,6 @@ set_variables() {
     utilities_folder="/System/Applications/Utilities"
     terminal_app_path="$utilities_folder/$terminal_app_name.app"
     permission="Full Disk Access"
-    # list of users with home folders in /Users not owned by root, returning only the username, one per line
-    # shellcheck disable=2296
-    users_from_folders=(${(@f)$(print -l /Users/^_*(^u:root:)):t})
-    if ! (( ${#users_from_folders} )); then
-        error_output 12 "No user accounts found, exiting"
-    elif (( ${#users_from_folders} < 10 )); then
-        if ! (( EUID )); then
-            print_output "${#users_from_folders} users found"
-        fi
-    else
-        error_output 5 "Too many user accounts found, exiting"
-    fi
     prefs_panel_path="x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
 }
 
@@ -119,6 +132,19 @@ error_output() {
         print -- "[${USER:l}] $*"
     esac
     exit $code
+}
+
+# Converts bytes value to human-readable string [$1: bytes value] (base10)
+bytesToHumanReadable() {
+    local i=1
+    local bytes=$1
+    local kb=1000.0
+    local units=(KB MB GB TB PB EB ZB YB)
+    while ((bytes > kb)); do
+        bytes=$((bytes / kb))
+        ((i++))
+    done
+    print "${bytes:0:4}${units[i]}"
 }
 
 # Run dialog with the provided arguments
@@ -297,6 +323,17 @@ run_dialog() {
             # shellcheck disable=2296
             values='"values": ["'${(j:",":)users_from_folders}'","---","All users above"]'
         fi
+        # shellcheck disable=1009,1072,1073 # zsh-specific syntax
+        if (( users_from_folders[(Ie)Shared] )); then
+            json_arguments+='
+                "checkbox": [
+                    {
+                        "label": "Include Shared folder (~'$shared_folder_size')",
+                        "checked": false
+                    }
+                ],
+                "vieworder": "dropdown, checkbox",'
+        fi
         selectitems='"title": "User", "required": true, '$values', "default": "'${users_from_folders[1]}'"'
         json_arguments+='
             "width": "600",
@@ -447,9 +484,20 @@ run_dialog() {
             inputted_password=$(print -- $captured_input | awk -F': ' 'tolower($0) ~ /password/ {print $NF}');;
         user_selection)
             selected_user=$(print -- $captured_input | awk -F': ' '/SelectedOption/ {print $NF}' | tr -d \")
+            if (( users_from_folders[(Ie)Shared] )); then
+                include_shared=$(print -- $captured_input | awk -F': ' '/Include Shared folder/ {print $NF}' | tr -d \")
+                if [[ $include_shared == "true" ]]; then
+                    include_shared=1
+                fi
+            fi
             case $selected_user in
             "All users above")
                 selected_user=all;;
+            "Shared")
+                selected_user=shared
+                if (( include_shared )); then
+                    include_shared=0
+                fi;;
             esac;;
         next_steps)
             migrate_answer=$dialog_exit_code
@@ -541,7 +589,7 @@ elevate_script() {
 # Display a progress indicator while a process is running
 show_progress() {
     backup_pid=${1:-0}
-    print_output "Monitoring backup progress in …/${backup_folder:t}/${backup_log:t}"
+    print_output "Monitoring progress in …/${backup_folder:t}/${backup_log:t}"
     local progress=(⣶ ⣧ ⣏ ⡟ ⠿ ⢻ ⣹ ⣼)
     local i=0
     while /bin/ps -p $backup_pid > /dev/null; do
@@ -601,9 +649,9 @@ progress_update() {
         print "progresstext: Verifying space requirements" >> $command_file;;
     ready)
         print "listitem: index: 4, status: success, statustext: Verified" >> $command_file
-        print "listitem: index: 4, subtitle:/${backup_folder:t}" >> $command_file
+        print "listitem: index: 4, subtitle:${backup_folder:t}" >> $command_file
         print "progress: increment" >> $command_file
-        print "progresstext: ✔︎ Backup target:/${backup_folder:t} | $total_space_string" >> $command_file
+        print "progresstext: ✔︎ Backup target:${backup_folder:t} | $total_space_string" >> $command_file
         /bin/sleep 2
         print "listitem: index: 5, subtitle: $space_req_string to backup" >> $command_file
         print "listitem: index: 5, status: pending, statustext: Waiting" >> $command_file
@@ -715,7 +763,7 @@ evaluate_full_disk_access() {
         if get_full_disk_access_status; then
             break
         fi
-        if (( showed_dialog )); then
+        if ! (( showed_dialog )); then
             showed_dialog=1
             print_output "$permission required for $terminal_app_name, displaying dialog"
             print_output "Upon identifying the correct permissions, System Settings will quit and the script continue"
@@ -751,24 +799,17 @@ establish_user() {
     print_output "Which account do you want to backup?"
     run_dialog user_selection
     print_output "User selection made: $selected_user"
+    if (( include_shared )); then
+        print_output "Shared folder included: true"
+    fi
 }
 
 # Create the backup target folder
 create_backup_target() {
-    # Converts bytes value to human-readable string [$1: bytes value] (base10)
-    bytesToHumanReadable() {
-        local i=${1:-0} d="" s=1 S=("KB" "MB" "GB" "TB" "PB" "EB" "YB" "ZB")
-        while ((i > 1000 && s < ${#S[@]}-1)); do
-            printf -v d ".%02d" $((i % 1000 * 100 / 1000))
-            i=$((i / 1000))
-            s=$((s + 1))
-        done
-        print "$i$d ${S[$s]}"
-    }
-
     datestamp=$(/bin/date $'+'$'%Y-%m-%d')
+    onedrive_folder="Library/Group Containers/UBF8T346G9.OneDriveStandaloneSuite"
     case $selected_user in
-    all)
+    all|shared)
         computer_name=$(/usr/sbin/scutil --get ComputerName)
         backup_folder="$script_folder/backup_${computer_name}_${datestamp}";;
     *)
@@ -785,20 +826,42 @@ create_backup_target() {
     all)
         print_output "Calculating space requirements for all users"
         for iterated_user in $users_from_folders; do
-            user_space_req=$(/usr/bin/du -sAckx /Users/$iterated_user/^.Trash*(DN) | awk '/total/ {print $1}')
+            user_space_req=$(/usr/bin/du -xck /Users/$iterated_user/^.Trash*(DN) | awk '/\ttotal/ {print $1}')
+            if [[ -d /Users/$iterated_user/$onedrive_folder ]]; then
+                onedrive_size=$(/usr/bin/du -xck /Users/$iterated_user/$onedrive_folder | awk '/\ttotal/ {print $1}')
+                user_space_req=$((user_space_req - onedrive_size))
+            fi
+            onedrive_size=$(/usr/bin/du -xck /Users/$iterated_user/$onedrive_folder | awk '/\ttotal/ {print $1}')
             space_req=$((space_req + user_space_req))
-        done;;
+        done
+        print_output "All users folder size: $(bytesToHumanReadable $user_space_req)";;
+    shared)
+        print_output "Calculating space requirements for Shared folder"
+        user_space_req=$(/usr/bin/du -xck /Users/Shared/*(DN) | awk '/\ttotal/ {print $1}')
+        space_req=$((space_req + user_space_req))
+        print_output "Shared folder size: $(bytesToHumanReadable $user_space_req)";;
     *)
         print_output "Calculating space requirements for $selected_user"
-        # shellcheck disable=2296
-        source_folders=("${(@f)$(print -l /Users/${selected_user}/^.Trash*(DN))}")
-        user_space_req=$(/usr/bin/du -sAckx $source_folders | awk '/total/ {print $1}')
-        space_req=$((space_req + user_space_req));;
+        user_space_req=$(/usr/bin/du -xck /Users/$selected_user/^.Trash*(DN) | awk '/\ttotal/ {print $1}')
+        if [[ -d /Users/$selected_user/$onedrive_folder ]]; then
+            onedrive_size=$(/usr/bin/du -xck /Users/$selected_user/$onedrive_folder | awk '/\ttotal/ {print $1}')
+            user_space_req=$((user_space_req - onedrive_size))
+        fi
+        space_req=$((space_req + user_space_req))
+        print_output "$selected_user folder size: $(bytesToHumanReadable $user_space_req)";;
     esac
-    applicationsupport_space_req=$(/usr/bin/du -sAckx $app_support_folder/*(DN) | awk '/total/ {print $1}')
+    if (( include_shared )); then
+        print_output "Calculating space requirements for Shared folder"
+        user_space_req=$(/usr/bin/du -xck /Users/Shared/*(DN) | awk '/\ttotal/ {print $1}')
+        space_req=$((space_req + user_space_req))
+        print_output "Shared folder size: $(bytesToHumanReadable $user_space_req)"
+    fi
+    applicationsupport_space_req=$(/usr/bin/du -xck $app_support_folder/*(DN) | awk '/\ttotal/ {print $1}')
     space_req=$((space_req + applicationsupport_space_req))
     space_req_string=$(bytesToHumanReadable $space_req)
     space_free_string=$(bytesToHumanReadable $space_free)
+    print_output "Space required: $space_req_string"
+    print_output "Space available: $space_free_string"
     total_space_string="(req: $space_req_string, avail: $space_free_string)"
     total_space_percent=$(print -- $((space_req * 100 / space_free)))
     if [[ $space_free -lt $space_req ]]; then
@@ -817,7 +880,7 @@ create_backup_target() {
 
 # Display the ready to run message
 ready_to_run() {
-    print_output "Please save any documents and close all applications, except Terminal.app, before continuing"
+    print_output "Save any documents and close all applications but Terminal.app before continuing"
     run_dialog ready || return 1
 }
 
@@ -841,7 +904,7 @@ run_backup() {
             ((break_counter++))
         done
         sleep 1
-        _ditto=("/usr/bin/ditto")
+        _rsync=("/usr/bin/rsync")
         case $selected_user in
         all)
             for iterated_user in $users_from_folders; do
@@ -851,31 +914,42 @@ run_backup() {
                 /bin/sleep 1
                 for item in $source_dir/^.Trash*(DN); do
                     print "Backing up: $item"
-                    /bin/mkdir -p $target_dir/${item:t}
-                    $_ditto -X --rsrc -v $item $target_dir/${item:t} &>/dev/null
+                    $_rsync --exclude="UBF8T346G9.OneDriveStandaloneSuite" -axq $item $target_dir &>/dev/null
                 done
             done;;
         *)
-            source_dir="/Users/$selected_user"
-            target_dir="$backup_folder/$selected_user"
-            /bin/mkdir -p "$target_dir"
-            /bin/sleep 1
-            # shellcheck disable=2231
-            for item in $source_dir/^.Trash*(DN); do
-                print "Backing up: $item"
-                /bin/mkdir -p $target_dir/${item:t}
-                $_ditto -X --rsrc -v $item $target_dir/${item:t} &>/dev/null
-            done;;
+            case $selected_user in
+            Shared)
+                include_shared=1;;
+            *)
+                source_dir="/Users/$selected_user"
+                target_dir="$backup_folder/$selected_user"
+                /bin/mkdir -p $target_dir
+                /bin/sleep 1
+                # shellcheck disable=2231
+                for item in $source_dir/^.Trash*(DN); do
+                    print "Backing up: $item"
+                    $_rsync --exclude="UBF8T346G9.OneDriveStandaloneSuite" -axq $item $target_dir &>/dev/null
+                done
+            esac
+            if (( include_shared )); then
+                source_dir="/Users/Shared"
+                target_dir="$backup_folder/Shared"
+                mkdir -p $target_dir
+                for item in $source_dir/*(DN); do
+                    print "Backing up: $item"
+                    $_rsync --exclude="UBF8T346G9.OneDriveStandaloneSuite" -axq $item $target_dir &>/dev/null
+                done
+            fi;;
         esac
         target_dir="$backup_folder/Application Support"
         print "Backing up: $app_support_folder"
-        /bin/mkdir -p "$target_dir"
+        /bin/mkdir -p $target_dir
         /bin/sleep 1
         # shellcheck disable=2231
         for item in $app_support_folder/*(DN); do
             print "Backing up: $item"
-            /bin/mkdir -p $target_dir/${item:t}
-            $_ditto -X --rsrc -v $item $target_dir/${item:t} &> /dev/null
+            $_rsync --exclude="UBF8T346G9.OneDriveStandaloneSuite" -axq $item $target_dir &> /dev/null
         done
         print "Setting permissions on: …/${backup_folder:t}"
         if ! /usr/sbin/chown -R 99:99 $backup_folder; then
@@ -947,7 +1021,7 @@ show_erase_assistant() {
 # Verify the backup
 verify_backup() {
     print_output "Verifying backup"
-    backup_size=$(/usr/bin/du -sHAckx $backup_folder/*(DN) | awk '/total/ {print $1}')
+    backup_size=$(/usr/bin/du -xck $backup_folder/*(DN) | awk '/\ttotal/ {print $1}')
     backup_size_string=$(bytesToHumanReadable $backup_size)
     space_req_percent=$((backup_size / 10)) # 10% of backup size
     lower_bound=$((space_req - space_req_percent))
@@ -958,6 +1032,8 @@ verify_backup() {
         print_output "Backup size: $backup_size_string"
         print_output "Expected size: $lower_bound_string to $upper_bound_string"
         backup_size_warning=1
+    else
+        print_output "Backup size: $backup_size_string"
     fi
 }
 
